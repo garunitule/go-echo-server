@@ -13,8 +13,11 @@ func handleConnection(conn *net.TCPConn) {
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			// net.ErrorのTemporary()が非推奨なので、型アサーションで判定しない
-			// ライブラリによってはTimeout系のエラーの場合も、Temporary()がtrueになるため
+			if ne, ok := err.(net.Error); ok {
+				if ne.Temporary() {
+					continue
+				}
+			}
 			log.Println("Read", err)
 			return
 		}
@@ -32,9 +35,14 @@ func handleListener(l *net.TCPListener) error {
 		// 接続要求があればAcceptする
 		conn, err := l.AcceptTCP()
 		if err != nil {
-			// net.ErrorのTemporary()が非推奨なので、型アサーションで判定しない
-			// ライブラリによってはTimeout系のエラーの場合も、Temporary()がtrueになるため
-			log.Println("AcceptTCP", err)
+			if ne, ok := err.(net.Error); ok {
+				// Temporaryは非推奨だが使用する
+				// 非推奨な理由は、Temporary()の挙動がライブラリによって異なるから
+				// 標準パッケージであるAcceptTCPの場合は、Temporary()がエラーになるのはシステムコールエラーの場合のみだとすぐわかるので、s、い要している
+				if ne.Temporary() {
+					continue
+				}
+			}
 			return err
 		}
 
