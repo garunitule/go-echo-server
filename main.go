@@ -4,7 +4,6 @@ import (
 	"context"
 	"github/garunitue/go-echo-server/server"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -13,19 +12,6 @@ import (
 
 // TODO: 全ての停止パターンを網羅できているか
 func main() {
-	// ソケットにアドレスとポートをバインド
-	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:12345")
-	if err != nil {
-		log.Println("ResolveTCPAddr", err)
-		return
-	}
-	// Listenして外部からの接続を待つ
-	l, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		log.Println("ListenTCP", err)
-		return
-	}
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Ignore()
 	signal.Notify(sigChan, syscall.SIGINT)
@@ -35,31 +21,20 @@ func main() {
 
 	serverCtx, shutdown := context.WithCancel(context.Background())
 	server := server.NewServer(
-		"localhost", // TODO: 修正
-		l,
+		"localhost:12345",
 		serverCtx,
 		shutdown,
 		&wg,
 		chClosed,
 	)
-
-	// go handleListener(l, serverCtx, &wg, chClosed)
-	go server.HandleListener()
-
+	server.Listen()
 	log.Println("Server started")
 
 	s := <-sigChan
 	switch s {
 	case syscall.SIGINT:
 		log.Println("Server shutdown...")
-		// 各クライアントとの接続の終了をトリガー
-		// handleConnection: servetCtx, readCtxいずれかのDoneチャネルに通知されたら、接続を終了する
-		// handleRead: handleConnectionのconn.Close()で終了される
-		shutdown()
-		// Listenerを閉じる
-		// handleListener: serverCtx.Done()に通知されるまで待つ。つまり、接続やそこで行われる処理が全て終了するまで待つ
-		// Close処理がないとAcceptTCPでブロックされ続ける
-		l.Close()
+		server.Shutdown()
 
 		// 各クライアントとの接続が終了するまで待つ
 		wg.Wait()

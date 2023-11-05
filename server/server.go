@@ -17,10 +17,9 @@ type Server struct {
 	ChClosed chan struct{}
 }
 
-func NewServer(addr string, listener net.Listener, ctx context.Context, shutdown context.CancelFunc, wg *sync.WaitGroup, chClosed chan struct{}) *Server {
+func NewServer(addr string, ctx context.Context, shutdown context.CancelFunc, wg *sync.WaitGroup, chClosed chan struct{}) *Server {
 	return &Server{
 		addr:     addr,
-		listener: listener.(*net.TCPListener),
 		ctx:      ctx,
 		shutdown: shutdown,
 		Wg:       wg,
@@ -28,7 +27,39 @@ func NewServer(addr string, listener net.Listener, ctx context.Context, shutdown
 	}
 }
 
-func (s *Server) HandleListener() {
+func (s *Server) Listen() error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", s.addr)
+	if err != nil {
+		return err
+	}
+
+	l, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		return err
+	}
+	s.listener = l
+	go s.handleListener()
+	return nil
+}
+
+func (s *Server) Shutdown() {
+	select {
+	case <-s.ctx.Done():
+		// already shutdown
+	default:
+		// 各クライアントとの接続の終了をトリガー
+		// handleConnection: servetCtx, readCtxいずれかのDoneチャネルに通知されたら、接続を終了する
+		// handleRead: handleConnectionのconn.Close()で終了される
+		s.shutdown()
+
+		// Listenerを閉じる
+		// handleListener: serverCtx.Done()に通知されるまで待つ。つまり、接続やそこで行われる処理が全て終了するまで待つ
+		// Close処理がないとAcceptTCPでブロックされ続ける
+		s.listener.Close()
+	}
+}
+
+func (s *Server) handleListener() {
 	defer func() {
 		// これ不要な気がする
 		s.listener.Close()
