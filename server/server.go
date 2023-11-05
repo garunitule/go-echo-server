@@ -9,21 +9,25 @@ import (
 )
 
 type Server struct {
-	addr     string
-	listener *net.TCPListener
-	ctx      context.Context
-	shutdown context.CancelFunc
-	Wg       *sync.WaitGroup
-	ChClosed chan struct{}
+	addr      string
+	listener  *net.TCPListener
+	ctx       context.Context
+	shutdown  context.CancelFunc
+	Wg        *sync.WaitGroup
+	ChClosed  chan struct{}
+	AcceptCtx context.Context
+	errAccept context.CancelFunc
 }
 
-func NewServer(addr string, ctx context.Context, shutdown context.CancelFunc, wg *sync.WaitGroup, chClosed chan struct{}) *Server {
+func NewServer(addr string, ctx context.Context, shutdown context.CancelFunc, wg *sync.WaitGroup, chClosed chan struct{}, acceptCtx context.Context, errAccept context.CancelFunc) *Server {
 	return &Server{
-		addr:     addr,
-		ctx:      ctx,
-		shutdown: shutdown,
-		Wg:       wg,
-		ChClosed: chClosed,
+		addr:      addr,
+		ctx:       ctx,
+		shutdown:  shutdown,
+		Wg:        wg,
+		ChClosed:  chClosed,
+		AcceptCtx: acceptCtx,
+		errAccept: errAccept,
 	}
 }
 
@@ -88,6 +92,7 @@ func (s *Server) handleListener() {
 				}
 			}
 			log.Println("AcceptTCP", err)
+			s.errAccept()
 			return
 		}
 

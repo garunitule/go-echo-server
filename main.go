@@ -20,28 +20,38 @@ func main() {
 	chClosed := make(chan struct{})
 
 	serverCtx, shutdown := context.WithCancel(context.Background())
-	server := server.NewServer(
+	acceptCtx, errAccept := context.WithCancel(context.Background())
+	srv := server.NewServer(
 		"localhost:12345",
 		serverCtx,
 		shutdown,
 		&wg,
 		chClosed,
+		acceptCtx,
+		errAccept,
 	)
-	server.Listen()
+	srv.Listen()
 	log.Println("Server started")
 
-	s := <-sigChan
-	switch s {
-	case syscall.SIGINT:
-		log.Println("Server shutdown...")
-		server.Shutdown()
+	select {
+	case sig := <-sigChan:
+		switch sig {
+		case syscall.SIGINT:
+			log.Println("Server shutdown...")
+			srv.Shutdown()
 
-		// 各クライアントとの接続が終了するまで待つ
-		wg.Wait()
-		// Listenerが終了するまで待つ
-		<-chClosed
-		log.Println("Server shutdown completed")
-	default:
-		panic("unexpected signal has been received")
+			// 各クライアントとの接続が終了するまで待つ
+			wg.Wait()
+			// Listenerが終了するまで待つ
+			<-srv.ChClosed
+			log.Println("Server shutdown completed")
+		default:
+			panic("unexpected signal has been received")
+		}
+	case <-srv.AcceptCtx.Done():
+		log.Println("Server Error Occurred")
+		srv.Wg.Wait()
+		<-srv.ChClosed
+		log.Println("Server dhutdown completed")
 	}
 }

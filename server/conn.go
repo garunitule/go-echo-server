@@ -27,6 +27,7 @@ func (c *Conn) handleConnection() {
 	select {
 	case <-c.readCtx.Done():
 	case <-c.svr.ctx.Done():
+	case <-c.svr.AcceptCtx.Done():
 	}
 }
 
