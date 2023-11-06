@@ -7,15 +7,19 @@ import (
 )
 
 type Conn struct {
-	svr     *Server
-	conn    *net.TCPConn
-	readCtx context.Context
-	errRead context.CancelFunc
+	svr       *Server
+	conn      *net.TCPConn
+	readCtx   context.Context
+	stopRead  context.CancelFunc
+	ctxWrite  context.Context
+	stopWrite context.CancelFunc
+	sem       chan struct{}
 }
 
 // conn *net.TCPConn, serverCtx context.Context, wg *sync.WaitGroup
 func (c *Conn) handleConnection() {
 	defer func() {
+		c.stopWrite()
 		c.conn.Close()
 		c.svr.Wg.Done()
 	}()
@@ -31,10 +35,10 @@ func (c *Conn) handleConnection() {
 	}
 }
 
-// conn *net.TCPConn, errRead context.CancelFunc
+// conn *net.TCPConn, stopRead context.CancelFunc
 func (c *Conn) handleRead() {
 	// クライアント側から接続終了された時
-	defer c.errRead()
+	defer c.stopRead()
 
 	buf := make([]byte, 4*1024)
 
@@ -50,9 +54,33 @@ func (c *Conn) handleRead() {
 			return
 		}
 
-		n, err = c.conn.Write(buf[:n])
-		if err != nil {
-			log.Println("Write error: ", err)
+		wBuf := make([]byte, n)
+		copy(wBuf, buf[:n])
+		go c.handleEcho(wBuf)
+	}
+}
+
+func (c *Conn) handleEcho(buf []byte) {
+	// 何らかのデータベースに関する処理を行う
+	// そのために、handleReadからhandleEchoを切り出して多重化可能にしている
+
+	select {
+	case <-c.ctxWrite.Done():
+		return
+	case c.sem <- struct{}{}:
+		defer func() { <-c.sem }()
+		for {
+			n, err := c.conn.Write(buf)
+			if err != nil {
+				if ne, ok := err.(net.Error); ok {
+					if ne.Temporary() {
+						buf = buf[n:]
+						continue
+					}
+				}
+				log.Println("Write error: ", err)
+				c.stopRead()
+			}
 			return
 		}
 	}

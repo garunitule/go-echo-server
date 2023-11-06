@@ -96,12 +96,16 @@ func (s *Server) handleListener() {
 			return
 		}
 
-		readCtx, errRead := context.WithCancel(context.Background())
+		readCtx, stopRead := context.WithCancel(context.Background())
+		writeCtx, stopWrite := context.WithCancel(context.Background())
 		c := &Conn{
-			svr:     s,
-			conn:    conn,
-			readCtx: readCtx,
-			errRead: errRead,
+			svr:       s,
+			conn:      conn,
+			readCtx:   readCtx,
+			stopRead:  stopRead,
+			ctxWrite:  writeCtx,
+			stopWrite: stopWrite,
+			sem:       make(chan struct{}, 1),
 		}
 		s.Wg.Add(1)
 
