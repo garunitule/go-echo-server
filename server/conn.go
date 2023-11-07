@@ -65,19 +65,24 @@ func (c *Conn) handleEcho(buf []byte) {
 	// そのために、handleReadからhandleEchoを切り出して多重化可能にしている
 
 	select {
+	// 接続終了したら、handleEchoも終了する
 	case <-c.ctxWrite.Done():
 		return
+	// 一度に一つのgoroutineが書き込みを行う
+	// 書き込みが終了、または、失敗したら、handleEchoは終了する
 	case c.sem <- struct{}{}:
 		defer func() { <-c.sem }()
 		for {
 			n, err := c.conn.Write(buf)
 			if err != nil {
 				if ne, ok := err.(net.Error); ok {
+					// 一時的なエラーが発生した場合は、再送する
 					if ne.Temporary() {
 						buf = buf[n:]
 						continue
 					}
 				}
+				// 致命的なエラーが発生した場合は書き込みをせず、接続を終了する
 				log.Println("Write error: ", err)
 				c.stopRead()
 			}
