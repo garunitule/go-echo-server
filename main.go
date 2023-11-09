@@ -21,6 +21,7 @@ func main() {
 
 	serverCtx, shutdown := context.WithCancel(context.Background())
 	acceptCtx, errAccept := context.WithCancel(context.Background())
+	ctxGracefulShutdown, gshutdown := context.WithCancel(context.Background())
 	srv := server.NewServer(
 		"localhost:12345",
 		serverCtx,
@@ -29,6 +30,8 @@ func main() {
 		chClosed,
 		acceptCtx,
 		errAccept,
+		ctxGracefulShutdown,
+		gshutdown,
 	)
 	srv.Listen()
 	log.Println("Server started")
@@ -43,6 +46,13 @@ func main() {
 			// 各クライアントとの接続が終了するまで待つ
 			wg.Wait()
 			// Listenerが終了するまで待つ
+			<-srv.ChClosed
+			log.Println("Server shutdown completed")
+		case syscall.SIGQUIT:
+			log.Println("Server shutdown...")
+			srv.GracefulShutdown()
+
+			srv.Wg.Wait()
 			<-srv.ChClosed
 			log.Println("Server shutdown completed")
 		default:

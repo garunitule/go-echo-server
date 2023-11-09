@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"sync"
 )
 
 type Conn struct {
@@ -14,6 +15,7 @@ type Conn struct {
 	ctxWrite  context.Context
 	stopWrite context.CancelFunc
 	sem       chan struct{}
+	wg        sync.WaitGroup
 }
 
 // conn *net.TCPConn, serverCtx context.Context, wg *sync.WaitGroup
@@ -32,6 +34,11 @@ func (c *Conn) handleConnection() {
 	case <-c.readCtx.Done():
 	case <-c.svr.ctx.Done():
 	case <-c.svr.AcceptCtx.Done():
+	case <-c.svr.ctxGracefulShutdown.Done():
+		// 読み取りを終了する
+		c.conn.CloseRead()
+		// 書き込みが全て終わるまで待つ
+		c.wg.Wait()
 	}
 }
 
@@ -61,6 +68,7 @@ func (c *Conn) handleRead() {
 }
 
 func (c *Conn) handleEcho(buf []byte) {
+	defer c.wg.Done()
 	// 何らかのデータベースに関する処理を行う
 	// そのために、handleReadからhandleEchoを切り出して多重化可能にしている
 
@@ -85,6 +93,7 @@ func (c *Conn) handleEcho(buf []byte) {
 				// 致命的なエラーが発生した場合は書き込みをせず、接続を終了する
 				log.Println("Write error: ", err)
 				c.stopRead()
+				c.stopWrite()
 			}
 			return
 		}
